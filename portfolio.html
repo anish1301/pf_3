@@ -1,0 +1,2186 @@
+<script type="text/javascript">
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+        function filledCell(cell) {
+          return cell !== '' && cell != null;
+        }
+        function loadFileData(filename) {
+        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+            try {
+                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                var firstSheetName = workbook.SheetNames[0];
+                var worksheet = workbook.Sheets[firstSheetName];
+
+                // Convert sheet to JSON to filter blank rows
+                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                // Filter out blank rows (rows where all cells are empty, null, or undefined)
+                var filteredData = jsonData.filter(row => row.some(filledCell));
+
+                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
+                var headerRowIndex = filteredData.findIndex((row, index) =>
+                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+                );
+                // Fallback
+                if (headerRowIndex === -1 || headerRowIndex > 25) {
+                  headerRowIndex = 0;
+                }
+
+                // Convert filtered JSON back to CSV
+                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
+                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                return csv;
+            } catch (e) {
+                console.error(e);
+                return "";
+            }
+        }
+        return gk_fileData[filename] || "";
+        }
+        </script><!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Anish's Portfolio</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@300;400;500;600;700;800&display=swap');
+        
+        :root {
+            --primary: #00ffff;
+            --secondary: #ff00ff;
+            --accent: #ffff00;
+            --bg: #000000;
+            --text: #ffffff;
+        }
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Inter', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            overflow-x: hidden;
+            scroll-behavior: smooth;
+            cursor: none;
+        }
+
+        /* Loading Screen */
+        #loading-screen {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: radial-gradient(circle at center, #111, #000);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 10000;
+            transition: opacity 1s ease;
+        }
+        
+        .loading-content {
+            text-align: center;
+        }
+        
+        .loading-logo {
+            font-size: 3rem;
+            font-weight: 800;
+            background: linear-gradient(45deg, var(--primary), var(--secondary), var(--accent));
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+            font-family: 'JetBrains Mono', monospace;
+            margin-bottom: 2rem;
+            animation: logoGlow 2s ease-in-out infinite alternate;
+        }
+        
+        .loading-bar {
+            width: 400px;
+            height: 4px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 2px;
+            overflow: hidden;
+            margin: 0 auto 1rem auto;
+        }
+        
+        #loading-fill {
+            height: 100%;
+            background: linear-gradient(45deg, var(--primary), var(--secondary));
+            width: 0%;
+            border-radius: 2px;
+            transition: width 0.3s ease;
+        }
+        
+        #loading-progress {
+            font-family: 'JetBrains Mono', monospace;
+            color: var(--primary);
+            font-size: 1.2rem;
+        }
+
+        /* Reveal Overlay */
+        #reveal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: #000;
+            z-index: 9999;
+            transition: opacity 0.8s ease;
+        }
+        
+        #reveal-overlay.fade-out {
+            opacity: 0;
+        }
+        
+        #grid-lines {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+        }
+        
+        .grid-line {
+            position: absolute;
+            background: linear-gradient(45deg, var(--primary), var(--secondary));
+        }
+        
+        .grid-line.horizontal {
+            height: 1px;
+            width: 0;
+            animation: expandHorizontal 0.8s ease forwards;
+        }
+        
+        .grid-line.vertical {
+            width: 1px;
+            height: 0;
+            animation: expandVertical 0.8s ease forwards;
+        }
+        
+        @keyframes expandHorizontal {
+            to { width: 100%; }
+        }
+        
+        @keyframes expandVertical {
+            to { height: 100%; }
+        }
+
+        /* Custom Cursor */
+        .cursor {
+            position: fixed;
+            left: 0;
+            top: 0;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: var(--primary);
+            pointer-events: none;
+            z-index: 10000;
+            mix-blend-mode: difference;
+            opacity: 0;
+            transform: translate(0, 0);
+            will-change: transform;
+        }
+        
+        .cursor.active {
+            opacity: 1;
+        }
+        
+        .cursor.hover {
+            width: 50px;
+            height: 50px;
+            background: rgba(0, 255, 255, 0.3);
+            border: 2px solid var(--primary);
+        }
+        
+        /* Three.js Canvas */
+        #canvas-container {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+        }
+        
+        /* Dynamic Background Grid */
+        .bg-grid {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-image: 
+                linear-gradient(rgba(0, 255, 255, 0.1) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(0, 255, 255, 0.1) 1px, transparent 1px);
+            background-size: 50px 50px;
+            z-index: 0;
+            animation: gridMove 20s linear infinite;
+        }
+        
+        @keyframes gridMove {
+            0% { transform: translate(0, 0); }
+            100% { transform: translate(50px, 50px); }
+        }
+
+        @keyframes logoGlow {
+            0% { filter: drop-shadow(0 0 5px rgba(0, 255, 255, 0.5)); }
+            100% { filter: drop-shadow(0 0 20px rgba(0, 255, 255, 0.8)); }
+        }
+        
+        /* Navigation */
+        nav {
+            position: fixed;
+            top: 0;
+            width: 100%;
+            padding: 2rem 4rem;
+            background: rgba(0, 0, 0, 0.8);
+            backdrop-filter: blur(20px);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            z-index: 1000;
+            transition: all 0.3s ease;
+            opacity: 0;
+            transform: translateY(-20px);
+        }
+        
+        nav.revealed {
+            opacity: 1;
+            transform: translateY(0);
+        }
+        
+        nav.scrolled {
+            padding: 1rem 4rem;
+            background: rgba(0, 0, 0, 0.95);
+        }
+        
+        .nav-container {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        
+        .logo {
+            font-size: 1.5rem;
+            font-weight: 700;
+            background: linear-gradient(45deg, var(--primary), var(--secondary), var(--accent));
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+            font-family: 'JetBrains Mono', monospace;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            animation: logoGlow 3s ease-in-out infinite alternate;
+        }
+        
+        .nav-links {
+            display: flex;
+            gap: 2rem;
+        }
+        
+        .nav-links a {
+            color: var(--text);
+            text-decoration: none;
+            font-weight: 400;
+            position: relative;
+            transition: all 0.3s ease;
+            padding: 0.5rem 1rem;
+            border-radius: 20px;
+            overflow: hidden;
+        }
+        
+        .nav-links a::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(0, 255, 255, 0.2), transparent);
+            transition: left 0.5s ease;
+        }
+        
+        .nav-links a:hover::before {
+            left: 100%;
+        }
+        
+        .nav-links a:hover,
+        .nav-links a.active {
+            color: var(--primary);
+            background: rgba(0, 255, 255, 0.1);
+            box-shadow: 0 10px 30px rgba(0, 255, 255, 0.3);
+            transform: translateY(-2px);
+        }
+        
+        /* Sections */
+        .section {
+            min-height: 100vh;
+            padding: 6rem 2rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            z-index: 100;
+            opacity: 0;
+            transform: translateY(30px);
+            transition: all 0.8s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+        }
+        
+        .section.revealed {
+            opacity: 1;
+            transform: translateY(0);
+        }
+        
+        .section-content {
+            max-width: 1200px;
+            margin: 0 auto;
+            text-align: center;
+        }
+        
+        .section h1, .section h2 {
+            font-size: clamp(2rem, 5vw, 4rem);
+            font-weight: 800;
+            margin-bottom: 2rem;
+            background: linear-gradient(45deg, #fff, var(--primary));
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+            position: relative;
+        }
+        
+        .section h2::after {
+            content: '';
+            position: absolute;
+            bottom: -10px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 0;
+            height: 3px;
+            background: linear-gradient(45deg, var(--primary), var(--secondary));
+            transition: width 1s ease;
+        }
+        
+        .section.revealed h2::after {
+            width: 100px;
+        }
+        
+        .section p {
+            font-size: 1.3rem;
+            line-height: 1.8;
+            opacity: 0.8;
+            max-width: 800px;
+            margin: 0 auto 2rem;
+        }
+        
+        #about {
+            min-height: auto;
+        }
+        
+        /* Hero Section */
+        .hero-container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 4rem;
+            align-items: center;
+            text-align: left;
+        }
+        
+        .hero-content {
+            opacity: 0;
+            transform: translateX(-30px);
+            transition: all 0.8s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+        }
+        
+        .hero-content.revealed {
+            opacity: 1;
+            transform: translateX(0);
+        }
+        
+        .hero-content > * {
+            opacity: 0;
+            transform: translateX(-30px);
+            transition: all 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+        }
+        
+        .hero-content.revealed > *:nth-child(1) { 
+            opacity: 1;
+            transform: translateX(0);
+            transition-delay: 0.1s; 
+        }
+        .hero-content.revealed > *:nth-child(2) { 
+            opacity: 1;
+            transform: translateX(0);
+            transition-delay: 0.2s; 
+        }
+        .hero-content.revealed > *:nth-child(3) { 
+            opacity: 1;
+            transform: translateX(0);
+            transition-delay: 0.3s; 
+        }
+        .hero-content.revealed > *:nth-child(4) { 
+            opacity: 1;
+            transform: translateX(0);
+            transition-delay: 0.4s; 
+        }
+        .hero-content.revealed > *:nth-child(5) { 
+            opacity: 1;
+            transform: translateX(0);
+            transition-delay: 0.5s; 
+        }
+        
+        .hero-visual {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            position: relative;
+            opacity: 0;
+            transform: translateX(30px);
+            transition: all 0.8s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+        }
+        
+        .hero-visual.revealed {
+            opacity: 1;
+            transform: translateX(0);
+            transition-delay: 0.6s;
+        }
+        
+        .profile-container {
+            width: 300px;
+            height: 300px;
+            border-radius: 50%;
+            background: linear-gradient(45deg, var(--primary), var(--secondary));
+            padding: 4px;
+            animation: rotate 10s linear infinite;
+            animation-play-state: paused;
+            position: relative;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        @keyframes rotate {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .profile-container:hover {
+            transform: scale(1.05);
+            animation-duration: 3s;
+        }
+        
+        .profile-container::before {
+            content: '';
+            position: absolute;
+            inset: -20px;
+            border-radius: 50%;
+            background: linear-gradient(45deg, var(--primary), var(--secondary), var(--accent));
+            opacity: 0;
+            transition: opacity 0.3s ease;
+            z-index: -1;
+            filter: blur(20px);
+        }
+        
+        .profile-container:hover::before {
+            opacity: 0.5;
+        }
+        
+        .profile-image {
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #1a1a1a, #2a2a2a);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            position: relative;
+            font-size: 5rem;
+        }
+        
+        .profile-image img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            border-radius: 50%;
+        }
+        
+        .orbit-particle {
+            position: absolute;
+            width: 6px;
+            height: 6px;
+            background: var(--primary);
+            border-radius: 50%;
+            animation: orbit 8s linear infinite;
+        }
+        
+        .orbit-particle:nth-child(2) {
+            animation-delay: -2s;
+            background: var(--secondary);
+        }
+        
+        .orbit-particle:nth-child(3) {
+            animation-delay: -4s;
+            background: var(--accent);
+        }
+        
+        .orbit-particle:nth-child(4) {
+            animation-delay: -6s;
+            background: var(--primary);
+        }
+        
+        @keyframes orbit {
+            0% {
+                transform: rotate(0deg) translateX(180px) rotate(0deg);
+                opacity: 1;
+            }
+            50% {
+                opacity: 0.3;
+            }
+            100% {
+                transform: rotate(360deg) translateX(180px) rotate(-360deg);
+                opacity: 1;
+            }
+        }
+        
+        /* Tonearm Styles */
+        .tonearm {
+            position: absolute;
+            top: 50%;
+            left: calc(50% + 150px - 250px);
+            width: 250px;
+            height: 10px;
+            transform-origin: right 50%;
+            transform: rotate(45deg);
+            transition: all 0.4s cubic-bezier(0.4, 0.0, 0.2, 1);
+            z-index: 10;
+            cursor: grab;
+            filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.3));
+        }
+        
+        .tonearm:active, .tonearm.playing {
+            cursor: grabbing;
+        }
+        
+        .arm {
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(to left, silver, gray);
+            border-radius: 5px;
+        }
+        
+        .headshell {
+            position: absolute;
+            left: -30px;
+            top: -5px;
+            width: 30px;
+            height: 20px;
+            background: darkgray;
+            clip-path: polygon(0 30%, 100% 0, 100% 100%, 0 70%);
+        }
+        
+        .needle {
+            position: absolute;
+            bottom: -10px;
+            left: 5px;
+            width: 2px;
+            height: 20px;
+            background: black;
+            transform: rotate(-45deg);
+        }
+        
+        .typing-text {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 1.2rem;
+            color: var(--primary);
+            margin-bottom: 1rem;
+            min-height: 1.5rem;
+            position: relative;
+        }
+        
+        .typing-text::after {
+            content: '|';
+            animation: blink 1s infinite;
+            color: var(--primary);
+        }
+        
+        @keyframes blink {
+            0%, 50% { opacity: 1; }
+            51%, 100% { opacity: 0; }
+        }
+        
+        .cta-button {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 1rem 2rem;
+            background: linear-gradient(45deg, var(--primary), var(--secondary));
+            color: #000;
+            text-decoration: none;
+            font-weight: 600;
+            border-radius: 50px;
+            margin: 0.5rem;
+            border: none;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .cta-button::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
+            transition: left 0.6s ease;
+        }
+        
+        .cta-button:hover::before {
+            left: 100%;
+        }
+        
+        .cta-button:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 20px 40px rgba(0, 255, 255, 0.3);
+        }
+        
+        .cta-button.secondary {
+            background: transparent;
+            border: 2px solid var(--primary);
+            color: var(--primary);
+        }
+        
+        .cta-button:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 20px 40px rgba(0, 255, 255, 0.3);
+        }
+        
+        /* Stats Container */
+        .stats-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 2rem;
+            margin: 3rem 0;
+        }
+        
+        .stat-item {
+            text-align: center;
+            padding: 2rem 1rem;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 15px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            transition: all 0.3s ease;
+            opacity: 0;
+            transform: translateY(20px);
+        }
+        
+        .stat-item.revealed {
+            opacity: 1;
+            transform: translateY(0);
+        }
+        
+        .stat-item:hover {
+            transform: translateY(-5px);
+            background: rgba(0, 255, 255, 0.1);
+        }
+        
+        .stat-number {
+            font-size: 2.5rem;
+            font-weight: 800;
+            color: var(--primary);
+            margin-bottom: 0.5rem;
+        }
+        
+        .stat-label {
+            font-size: 1rem;
+            opacity: 0.8;
+        }
+        
+        /* Skills Grid */
+        .skills-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 2rem;
+            margin-top: 3rem;
+        }
+        
+        .skill-card {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 15px;
+            padding: 2rem 1rem;
+            text-align: center;
+            transition: all 0.3s ease;
+            cursor: pointer;
+            position: relative;
+            overflow: hidden;
+            opacity: 0;
+            transform: translateY(20px);
+        }
+        
+        .skill-card.revealed {
+            opacity: 1;
+            transform: translateY(0);
+        }
+        
+        .skill-card::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: linear-gradient(45deg, transparent, rgba(0, 255, 255, 0.1), transparent);
+            transform: rotate(45deg);
+            transition: all 0.6s ease;
+            opacity: 0;
+        }
+        
+        .skill-card:hover::before {
+            opacity: 1;
+            animation: skillShine 1.5s ease infinite;
+        }
+        
+        @keyframes skillShine {
+            0% { transform: translateX(-100%) rotate(45deg); }
+            100% { transform: translateX(100%) rotate(45deg); }
+        }
+        
+        .skill-card:hover {
+            transform: translateY(-10px) rotateY(5deg);
+            background: rgba(0, 255, 255, 0.1);
+            box-shadow: 0 20px 40px rgba(0, 255, 255, 0.2);
+        }
+        
+        .skill-card .icon {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+            transition: all 0.3s ease;
+        }
+        
+        .skill-card:hover .icon {
+            animation: bounce 0.6s ease;
+        }
+        
+        @keyframes bounce {
+            0%, 20%, 60%, 100% { transform: translateY(0); }
+            40% { transform: translateY(-10px); }
+            80% { transform: translateY(-5px); }
+        }
+        
+        .skill-card .name {
+            font-weight: 600;
+            font-size: 1.1rem;
+        }
+        
+        .skill-progress {
+            width: 100%;
+            height: 4px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 2px;
+            margin-top: 1rem;
+            overflow: hidden;
+        }
+        
+        .skill-progress-bar {
+            height: 100%;
+            background: linear-gradient(45deg, var(--primary), var(--secondary));
+            width: 0%;
+            border-radius: 2px;
+            transition: width 1.5s ease;
+        }
+        
+        /* Projects Grid */
+        .projects-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 2rem;
+            margin-top: 3rem;
+        }
+        
+        .project-card {
+            background: rgba(255, 255, 255, 0.03);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 20px;
+            overflow: hidden;
+            transition: all 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+            cursor: pointer;
+            position: relative;
+            opacity: 0;
+            transform: translateY(20px);
+        }
+        
+        .project-card.revealed {
+            opacity: 1;
+            transform: translateY(0);
+        }
+        
+        .project-card::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(45deg, var(--primary), var(--secondary));
+            opacity: 0;
+            transition: opacity 0.3s ease;
+            z-index: -1;
+        }
+        
+        .project-card:hover::before {
+            opacity: 0.1;
+        }
+        
+        .project-card:hover {
+            transform: translateY(-15px) scale(1.02);
+            box-shadow: 0 30px 60px rgba(0, 255, 255, 0.3);
+        }
+        
+        .project-image {
+            width: 100%;
+            height: 200px;
+            background: linear-gradient(45deg, var(--primary), var(--secondary), var(--accent));
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 4rem;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .project-image::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(135deg, transparent 30%, rgba(255, 255, 255, 0.1) 50%, transparent 70%);
+            transform: translateX(-100%);
+            transition: transform 0.6s ease;
+        }
+        
+        .project-card:hover .project-image::before {
+            transform: translateX(100%);
+        }
+        
+        .project-content {
+            padding: 1.5rem;
+        }
+        
+        .project-content h3 {
+            font-size: 1.3rem;
+            font-weight: 600;
+            margin-bottom: 0.8rem;
+            transition: color 0.3s ease;
+        }
+        
+        .project-card:hover .project-content h3 {
+            color: var(--primary);
+        }
+        
+        .project-content p {
+            opacity: 0.7;
+            margin-bottom: 1rem;
+            text-align: left;
+            font-size: 0.9rem;
+            line-height: 1.4;
+        }
+        
+        .project-tags {
+            display: flex;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+            margin-bottom: 0.5rem;
+        }
+        
+        .tag {
+            padding: 0.2rem 0.6rem;
+            background: rgba(0, 255, 255, 0.2);
+            border: 1px solid rgba(0, 255, 255, 0.3);
+            border-radius: 20px;
+            font-size: 0.75rem;
+            color: var(--primary);
+            transition: all 0.3s ease;
+        }
+        
+        .tag:hover {
+            background: rgba(0, 255, 255, 0.3);
+            transform: translateY(-2px);
+        }
+        
+        /* Experience Section */
+        .experience-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+            gap: 2rem;
+            margin-top: 3rem;
+        }
+        
+        .experience-card {
+            background: rgba(255, 255, 255, 0.03);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 20px;
+            padding: 2rem;
+            transition: all 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+            cursor: pointer;
+            position: relative;
+            opacity: 0;
+            transform: translateY(20px);
+        }
+        
+        .experience-card.revealed {
+            opacity: 1;
+            transform: translateY(0);
+        }
+        
+        .experience-card::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(45deg, var(--primary), var(--secondary));
+            opacity: 0;
+            transition: opacity 0.3s ease;
+            z-index: -1;
+            border-radius: 20px;
+        }
+        
+        .experience-card:hover::before {
+            opacity: 0.1;
+        }
+        
+        .experience-card:hover {
+            transform: translateY(-10px) scale(1.02);
+            box-shadow: 0 25px 50px rgba(0, 255, 255, 0.3);
+        }
+        
+        .experience-header {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+        }
+        
+        .experience-icon {
+            width: 60px;
+            height: 60px;
+            background: linear-gradient(45deg, var(--primary), var(--secondary));
+            border-radius: 15px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+            flex-shrink: 0;
+        }
+        
+        .experience-info h3 {
+            font-size: 1.5rem;
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+            color: var(--primary);
+        }
+        
+        .experience-info .role {
+            font-size: 1.1rem;
+            color: rgba(255, 255, 255, 0.8);
+            font-weight: 500;
+        }
+        
+        .experience-achievements {
+            list-style: none;
+            padding: 0;
+        }
+        
+        .experience-achievements li {
+            margin-bottom: 0.8rem;
+            padding-left: 1.5rem;
+            position: relative;
+            opacity: 0.9;
+            line-height: 1.6;
+        }
+        
+        .experience-achievements li::before {
+            content: '▸';
+            position: absolute;
+            left: 0;
+            color: var(--primary);
+            font-weight: bold;
+            font-size: 1.1rem;
+        }
+        
+        .experience-achievements li:hover {
+            opacity: 1;
+            color: var(--primary);
+            transform: translateX(5px);
+            transition: all 0.3s ease;
+        }
+        
+        /* Contact Section */
+        .contact {
+            background: rgba(255, 255, 255, 0.02);
+        }
+        
+        .contact-container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 4rem;
+            align-items: start;
+            text-align: left;
+        }
+        
+        .contact-info {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+        
+        .contact-item {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            padding: 1rem;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 10px;
+            transition: all 0.3s ease;
+            cursor: pointer;
+            opacity: 0;
+            transform: translateY(20px);
+        }
+        
+        .contact-item.revealed {
+            opacity: 1;
+            transform: translateY(0);
+        }
+        
+        .contact-item:hover {
+            background: rgba(0, 255, 255, 0.1);
+            transform: translateX(10px) scale(1.02);
+            box-shadow: 0 10px 30px rgba(0, 255, 255, 0.2);
+        }
+        
+        .contact-item .icon {
+            font-size: 1.5rem;
+            color: var(--primary);
+            transition: all 0.3s ease;
+        }
+        
+        .contact-item:hover .icon {
+            animation: wiggle 0.5s ease;
+        }
+        
+        @keyframes wiggle {
+            0%, 100% { transform: rotate(0deg); }
+            25% { transform: rotate(-5deg); }
+            75% { transform: rotate(5deg); }
+        }
+        
+        .contact-form {
+            background: rgba(255, 255, 255, 0.05);
+            padding: 2rem;
+            border-radius: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .contact-form::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: linear-gradient(45deg, transparent, rgba(0, 255, 255, 0.03), transparent);
+            animation: formShine 3s ease-in-out infinite;
+        }
+        
+        @keyframes formShine {
+            0% { transform: translateX(-100%) translateY(-100%) rotate(45deg); }
+            100% { transform: translateX(100%) translateY(100%) rotate(45deg); }
+        }
+        
+        .form-group {
+            margin-bottom: 1.5rem;
+            position: relative;
+        }
+        
+        .form-group input,
+        .form-group textarea {
+            width: 100%;
+            padding: 1rem;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 10px;
+            color: #fff;
+            font-size: 1rem;
+            transition: all 0.3s ease;
+            font-family: inherit;
+        }
+        
+        .form-group input:focus,
+        .form-group textarea:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 20px rgba(0, 255, 255, 0.2);
+            transform: scale(1.02);
+        }
+        
+        .form-group input::placeholder,
+        .form-group textarea::placeholder {
+            color: rgba(255, 255, 255, 0.5);
+        }
+        
+        .submit-btn {
+            background: linear-gradient(45deg, var(--primary), var(--secondary));
+            color: #000;
+            border: none;
+            padding: 1rem 2rem;
+            border-radius: 50px;
+            font-size: 1.1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .submit-btn::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
+            transition: left 0.6s ease;
+        }
+        
+        .submit-btn:hover::before {
+            left: 100%;
+        }
+        
+        .submit-btn:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 20px 40px rgba(0, 255, 255, 0.3);
+        }
+        
+        /* Responsive Design */
+        @media (max-width: 768px) {
+            nav {
+                padding: 1rem 2rem;
+            }
+            
+            .nav-links {
+                gap: 1rem;
+            }
+            
+            .hero-container,
+            .contact-container {
+                grid-template-columns: 1fr;
+                gap: 2rem;
+            }
+            
+            .profile-container {
+                width: 250px;
+                height: 250px;
+            }
+            
+            .section {
+                padding: 4rem 1rem;
+            }
+            
+            .projects-grid,
+            .skills-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .tonearm {
+                left: calc(50% + 125px - 200px);
+                width: 200px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Loading Screen -->
+    <div id="loading-screen">
+        <div class="loading-content">
+            <div class="loading-logo">Anish's Portfolio</div>
+            <div class="loading-bar">
+                <div id="loading-fill"></div>
+            </div>
+            <div id="loading-progress">0%</div>
+        </div>
+    </div>
+
+    <!-- Reveal Overlay -->
+    <div id="reveal-overlay">
+        <div id="grid-lines"></div>
+    </div>
+
+    <!-- Custom Cursor -->
+    <div class="cursor"></div>
+
+    <!-- Background Elements -->
+    <div class="bg-grid"></div>
+    <div id="canvas-container"></div>
+
+    <!-- Navigation -->
+    <nav>
+        <div class="nav-container">
+            <div class="logo">Anish's Portfolio</div>
+            <div class="nav-links">
+                <a href="#home">Home</a>
+                <a href="#about">About</a>
+                <a href="#skills">Skills</a>
+                <a href="#projects">Projects</a>
+                <a href="#experience">Experience</a>
+                <a href="#contact">Contact</a>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Hero Section -->
+    <section id="home" class="section">
+        <div class="section-content">
+            <div class="hero-container">
+                <div class="hero-content">
+                    <div class="typing-text" id="typing-text"></div>
+                    <h1>Anish's Portfolio</h1>
+                    <p>Crafting digital experiences that push the boundaries of what's possible. Specializing in cutting-edge web technologies, immersive 3D interfaces, and high-performance applications.</p>
+                    <div class="stats-container">
+                        <div class="stat-item">
+                            <div class="stat-number" data-count="2">0</div>
+                            <div class="stat-label">Years Experience</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-number" data-count="99">0</div>
+                            <div class="stat-label">ICPC Taiwan Global Rank</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-number" data-count="10k">0</div>
+                            <div class="stat-label">Total Lines of Code</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-number" data-count="10">0</div>
+                            <div class="stat-label"> Projects Deployed</div>
+                        </div>
+                    </div>
+                    <div>
+                        <button class="cta-button" id="view-work">View My Work</button>
+                        <button class="cta-button secondary" id="download-cv">Download CV</button>
+                    </div>
+                </div>
+                <div class="hero-visual">
+                    <div class="profile-container">
+                        <div class="orbit-particle"></div>
+                        <div class="orbit-particle"></div>
+                        <div class="orbit-particle"></div>
+                        <div class="orbit-particle"></div>
+                        <div class="profile-image">
+                            <img src="./photo.jpg" alt="Anish Kumar - Full Stack Developer" />
+                        </div>
+                    </div>
+                    <div class="tonearm">
+                        <div class="arm"></div>
+                        <div class="headshell">
+                            <div class="needle"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- About Section -->
+    <section id="about" class="section">
+        <div class="section-content">
+            <h2>About Me</h2>
+            <p>I'm a passionate full-stack developer with expertise in modern web technologies. My journey spans from creating pixel-perfect user interfaces to architecting scalable backend systems. I thrive on turning complex problems into elegant solutions.</p>
+            <p>With a keen eye for detail and a passion for innovation, I continuously push the boundaries of web development to create experiences that are not only functional but also delightful to use. I have worked on various projects ranging from small startups to large enterprise applications, always focusing on delivering high-quality code and exceptional user experiences.</p>
+        </div>
+    </section>
+
+    <!-- Skills Section -->
+    <section id="skills" class="section">
+        <div class="section-content">
+            <h2>Skills & Expertise</h2>
+            <div class="skills-grid">
+                <div class="skill-card">
+                    <div class="icon">⚛️</div>
+                    <div class="name">React</div>
+                    <div class="skill-progress">
+                        <div class="skill-progress-bar" style="--target-width: 95%"></div>
+                    </div>
+                </div>
+                <div class="skill-card">
+                    <div class="icon">🎯</div>
+                    <div class="name">Three.js</div>
+                    <div class="skill-progress">
+                        <div class="skill-progress-bar" style="--target-width: 60%"></div>
+                    </div>
+                </div>
+                <div class="skill-card">
+                    <div class="icon">🟢</div>
+                    <div class="name">Node.js</div>
+                    <div class="skill-progress">
+                        <div class="skill-progress-bar" style="--target-width: 88%"></div>
+                    </div>
+                </div>
+                <div class="skill-card">
+                    <div class="icon">🚄</div>
+                    <div class="name">Express.js</div>
+                    <div class="skill-progress">
+                        <div class="skill-progress-bar" style="--target-width: 92%"></div>
+                    </div>
+                </div>
+                <div class="skill-card">
+                    <div class="icon">🐍</div>
+                    <div class="name">Python</div>
+                    <div class="skill-progress">
+                        <div class="skill-progress-bar" style="--target-width: 85%"></div>
+                    </div>
+                </div>
+                <div class="skill-card">
+                    <div class="icon">🐈‍⬛</div>
+                    <div class="name">GitHub</div>
+                    <div class="skill-progress">
+                        <div class="skill-progress-bar" style="--target-width: 80%"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Projects Section -->
+    <section id="projects" class="section">
+        <div class="section-content">
+            <h2>Featured Projects</h2>
+            <div class="projects-grid">
+                <div class="project-card" onclick="window.open('https://github.com/anish1301/sem_project', '_blank')">
+                    <div class="project-image">🕶️</div>
+                    <div class="project-content">
+                        <h3>AI-Powered Vision Assistant</h3>
+                        <p>YOLOv8 object detection tool with 90%+ accuracy. OOP design with MongoDB integration.</p>
+                        <div class="project-tags">
+                            <span class="tag">Python</span>
+                            <span class="tag">YOLOv8</span>
+                            <span class="tag">OpenCV</span>
+                            <span class="tag">MongoDB</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="project-card" onclick="window.open('https://rise-921d.vercel.app/login', '_blank')">
+                    <div class="project-image">🍽️</div>
+                    <div class="project-content">
+                        <h3>Restaurant Ordering System</h3>
+                        <p>Full-stack restaurant system with React, Node.js, JWT auth, and real-time WebSocket updates.</p>
+                        <div class="project-tags">
+                            <span class="tag">React.js</span>
+                            <span class="tag">Node.js</span>
+                            <span class="tag">TypeScript</span>
+                            <span class="tag">MongoDB</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="project-card" onclick="window.open('https://poc-rp-dkua-3od4g9hjx-anishs-projects-61639add.vercel.app/', '_blank')">
+                    <div class="project-image">🤖</div>
+                    <div class="project-content">
+                        <h3>Agentic AI Chatbot</h3>
+                        <p>AI-powered order management with Gemini AI and Redis. 60% cost reduction, 800ms to 50ms response time.</p>
+                        <div class="project-tags">
+                            <span class="tag">React</span>
+                            <span class="tag">Node.js</span>
+                            <span class="tag">Gemini AI</span>
+                            <span class="tag">Redis</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Experience Section -->
+    <section id="experience" class="section">
+        <div class="section-content">
+            <h2>Professional Experience</h2>
+            <div class="experience-grid">
+                <div class="experience-card">
+                    <div class="experience-header">
+                        <div class="experience-icon">🚀</div>
+                        <div class="experience-info">
+                            <h3>NGSpurs</h3>
+                            <div class="role">Software Development Intern</div>
+                        </div>
+                    </div>
+                    <ul class="experience-achievements">
+                        <li>Automated deployment with Docker and GitHub CI, cutting release steps by 30%</li>
+                        <li>Built scalable systems with Java, React.js, Node.js, MongoDB/MySQL</li>
+                        <li>Developed REST APIs and WebSocket, reducing latency by 25%</li>
+                        <li>Designed Lucknow Metro Kiosk in agile, test-driven environment</li>
+                        <li>Collaborated on cross-functional projects, providing code review feedback</li>
+                    </ul>
+                </div>
+                <div class="experience-card">
+                    <div class="experience-header">
+                        <div class="experience-icon">🔬</div>
+                        <div class="experience-info">
+                            <h3>Syntheim</h3>
+                            <div class="role">Software Engineering Research Intern</div>
+                        </div>
+                    </div>
+                    <ul class="experience-achievements">
+                        <li>Optimized 3D rendering with Python, TensorFlow, improving efficiency by 25%</li>
+                        <li>Researched algorithms for software design innovation</li>
+                        <li>Collaborated in distributed teams, conducting code reviews</li>
+                        <li>Enhanced CI/CD automation for consistent production updates</li>
+                        <li>Learned complex systems via research and mentorship, navigating large codebases</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Contact Section -->
+    <section id="contact" class="section contact">
+        <div class="section-content">
+            <h2>Let's Build Something Amazing</h2>
+            <div class="contact-container">
+                <div class="contact-info">
+                    <div class="contact-item">
+                        <div class="icon">📧</div>
+                        <div>
+                            <h4>Email</h4>
+                            <p>anishkumar130119@gmail.com</p>
+                        </div>
+                    </div>
+                    <div class="contact-item" onclick="window.open('https://www.linkedin.com/in/anish-kumar-478389290/', '_blank')">
+                        <div class="icon">💼</div>
+                        <div>
+                            <h4>LinkedIn</h4>
+                            <p><a href="https://www.linkedin.com/in/anish-kumar-478389290/" target="_blank" style="color: var(--primary); text-decoration: none;">My LinkedIn</a></p>
+                        </div>
+                    </div>
+                    <div class="contact-item" onclick="window.open('https://github.com/anish1301', '_blank')">
+                        <div class="icon">💻</div>
+                        <div>
+                            <h4>GitHub</h4>
+                            <p><a href="https://github.com/anish1301" target="_blank" style="color: var(--primary); text-decoration: none;">My GitHub</a></p>
+                        </div>
+                    </div>
+                    <!-- <div class="contact-item">
+                        <div class="icon">🌍</div>
+                        <div>
+                            <h4>Location</h4>
+                            <p>Available Worldwide</p>
+                        </div>
+                    </div> -->
+                </div>
+                <form class="contact-form" id="contact-form">
+                    <div class="form-group">
+                        <input type="text" name="name" placeholder="Your Name" required>
+                    </div>
+                    <div class="form-group">
+                        <input type="email" name="email" placeholder="Your Email" required>
+                    </div>
+                    <div class="form-group">
+                        <textarea name="message" rows="5" placeholder="Your Message" required></textarea>
+                    </div>
+                    <button type="submit" class="submit-btn">Send Message</button>
+                </form>
+            </div>
+        </div>
+    </section>
+
+    <audio id="record-player" loop src="./Zindagi Ek Safar Andaaz 320 Kbps.mp3"></audio>
+
+    <script>
+        // Global variables
+        let scene, camera, renderer;
+        let particleSystem, mouse = { x: 0, y: 0 };
+        let clock = new THREE.Clock();
+        let typingIndex = 0;
+        let currentTypingText = '';
+        let cursorTarget = { x: 0, y: 0 };
+        let currentCursorPos = { x: 0, y: 0 };
+        
+        const typingTexts = [
+            'Full-Stack Developer',
+            'Competitive Programmer',
+            'UI/UX Engineer',
+            'Performance Expert'
+        ];
+
+        // Initialize everything
+        document.addEventListener('DOMContentLoaded', () => {
+            initLoadingScreen();
+        });
+
+        // Loading Screen
+        function initLoadingScreen() {
+            const loadingScreen = document.getElementById('loading-screen');
+            const loadingFill = document.getElementById('loading-fill');
+            const loadingProgress = document.getElementById('loading-progress');
+            
+            let progress = 0;
+            
+            const progressInterval = setInterval(() => {
+                progress += Math.random() * 15 + 5;
+                if (progress > 100) progress = 100;
+                
+                loadingFill.style.width = progress + '%';
+                loadingProgress.textContent = Math.floor(progress) + '%';
+                
+                if (progress >= 100) {
+                    clearInterval(progressInterval);
+                    setTimeout(() => {
+                        loadingScreen.style.opacity = '0';
+                        setTimeout(() => {
+                            loadingScreen.remove();
+                            initMountAnimation();
+                        }, 1000);
+                    }, 500);
+                }
+            }, 80);
+        }
+
+        // Mount Animation System
+        function initMountAnimation() {
+            const revealOverlay = document.getElementById('reveal-overlay');
+            const gridLines = document.getElementById('grid-lines');
+            
+            // Create animated grid lines
+            function createGridLines() {
+                // Horizontal lines
+                for (let i = 0; i < 8; i++) {
+                    const line = document.createElement('div');
+                    line.className = 'grid-line horizontal';
+                    line.style.top = `${(i + 1) * 12.5}%`;
+                    line.style.left = '0';
+                    line.style.animationDelay = `${i * 0.1}s`;
+                    gridLines.appendChild(line);
+                }
+                
+                // Vertical lines
+                for (let i = 0; i < 12; i++) {
+                    const line = document.createElement('div');
+                    line.className = 'grid-line vertical';
+                    line.style.left = `${(i + 1) * 8.33}%`;
+                    line.style.top = '0';
+                    line.style.animationDelay = `${i * 0.08}s`;
+                    gridLines.appendChild(line);
+                }
+            }
+            
+            setTimeout(() => {
+                createGridLines();
+                
+                setTimeout(() => {
+                    revealOverlay.classList.add('fade-out');
+                    revealContent();
+                    
+                    setTimeout(() => {
+                        revealOverlay.remove();
+                        initScrollAnimations();
+                        initThreeScene();
+                        initTypingAnimation();
+                        initInteractions();
+                    }, 800);
+                }, 2500);
+            }, 100);
+        }
+
+        // Reveal Content
+        function revealContent() {
+            const nav = document.querySelector('nav');
+            const heroContent = document.querySelector('.hero-content');
+            const heroVisual = document.querySelector('.hero-visual');
+            
+            setTimeout(() => nav?.classList.add('revealed'), 100);
+            setTimeout(() => {
+                heroContent?.classList.add('revealed');
+                heroVisual?.classList.add('revealed');
+            }, 300);
+        }
+
+        // Scroll Animations
+        function initScrollAnimations() {
+            const observer = new IntersectionObserver((entries) => {
+                entries.forEach(entry => {
+                    if (entry.isIntersecting) {
+                        entry.target.classList.add('revealed');
+                        
+                        if (entry.target.classList.contains('stats-container')) {
+                            setTimeout(() => animateCounters(), 300);
+                        }
+                        
+                        if (entry.target.classList.contains('skills-grid')) {
+                            const skillCards = entry.target.querySelectorAll('.skill-card');
+                            skillCards.forEach((card, index) => {
+                                setTimeout(() => {
+                                    card.classList.add('revealed');
+                                    const progressBar = card.querySelector('.skill-progress-bar');
+                                    if (progressBar) {
+                                        const targetWidth = progressBar.style.getPropertyValue('--target-width');
+                                        setTimeout(() => {
+                                            progressBar.style.width = targetWidth;
+                                        }, 300);
+                                    }
+                                }, index * 150);
+                            });
+                        }
+                        
+                        if (entry.target.classList.contains('projects-grid')) {
+                            const projectCards = entry.target.querySelectorAll('.project-card');
+                            projectCards.forEach((card, index) => {
+                                setTimeout(() => {
+                                    card.classList.add('revealed');
+                                }, index * 200);
+                            });
+                        }
+                        
+                        if (entry.target.classList.contains('experience-grid')) {
+                            const experienceCards = entry.target.querySelectorAll('.experience-card');
+                            experienceCards.forEach((card, index) => {
+                                setTimeout(() => {
+                                    card.classList.add('revealed');
+                                }, index * 200);
+                            });
+                        }
+                        
+                        if (entry.target.classList.contains('contact-info')) {
+                            const contactItems = entry.target.querySelectorAll('.contact-item');
+                            contactItems.forEach((item, index) => {
+                                setTimeout(() => {
+                                    item.classList.add('revealed');
+                                }, index * 100);
+                            });
+                        }
+                    }
+                });
+            }, { threshold: 0.1, rootMargin: '0px 0px -50px 0px' });
+            
+            const elementsToObserve = document.querySelectorAll('.section, .skills-grid, .projects-grid, .experience-grid, .stats-container, .contact-info');
+            elementsToObserve.forEach(el => observer.observe(el));
+        }
+
+        // Counter Animation
+        function animateCounters() {
+            const counters = document.querySelectorAll('.stat-number');
+            counters.forEach(counter => {
+                const dataCount = counter.getAttribute('data-count');
+                const label = counter.parentElement.querySelector('.stat-label').textContent;
+                
+                // Handle different target formats
+                let target, displaySuffix = '';
+                if (dataCount.includes('k')) {
+                    target = parseInt(dataCount.replace('k', ''));
+                    displaySuffix = 'k+';
+                } else {
+                    target = parseInt(dataCount);
+                    if (label.includes('Years Experience')) {
+                        displaySuffix = '+';
+                    } else if (label.includes('ICPC Taiwan Global Rank')) {
+                        displaySuffix = '';
+                    } else if (label.includes('Projects Deployed')) {
+                        displaySuffix = '+';
+                    }
+                }
+                
+                let current = 0;
+                const increment = target / 50;
+                const timer = setInterval(() => {
+                    current += increment;
+                    if (current >= target) {
+                        counter.textContent = target + displaySuffix;
+                        clearInterval(timer);
+                    } else {
+                        counter.textContent = Math.floor(current) + displaySuffix;
+                    }
+                }, 50);
+                
+                setTimeout(() => {
+                    counter.parentElement.classList.add('revealed');
+                }, Math.random() * 500);
+            });
+        }
+
+        // Typing Animation
+        function initTypingAnimation() {
+            const typingElement = document.getElementById('typing-text');
+            let textIndex = 0;
+            let charIndex = 0;
+            let isDeleting = false;
+            
+            function type() {
+                const currentText = typingTexts[textIndex];
+                
+                if (isDeleting) {
+                    typingElement.textContent = currentText.substring(0, charIndex - 1);
+                    charIndex--;
+                } else {
+                    typingElement.textContent = currentText.substring(0, charIndex + 1);
+                    charIndex++;
+                }
+                
+                let typeSpeed = isDeleting ? 50 : 100;
+                
+                if (!isDeleting && charIndex === currentText.length) {
+                    typeSpeed = 2000;
+                    isDeleting = true;
+                } else if (isDeleting && charIndex === 0) {
+                    isDeleting = false;
+                    textIndex = (textIndex + 1) % typingTexts.length;
+                    typeSpeed = 500;
+                }
+                
+                setTimeout(type, typeSpeed);
+            }
+            
+            type();
+        }
+
+        // Three.js Scene
+        function initThreeScene() {
+            try {
+                scene = new THREE.Scene();
+                camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+                renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+                
+                renderer.setSize(window.innerWidth, window.innerHeight);
+                renderer.setClearColor(0x000000, 0);
+                
+                const container = document.getElementById('canvas-container');
+                container.appendChild(renderer.domElement);
+                
+                camera.position.z = 50;
+                
+                initParticleSystem();
+                animate();
+                
+            } catch (error) {
+                console.warn('Three.js initialization failed:', error);
+            }
+        }
+
+        // Particle System
+        function initParticleSystem() {
+            const particleCount = 1000;
+            const geometry = new THREE.BufferGeometry();
+            
+            const positions = new Float32Array(particleCount * 3);
+            const colors = new Float32Array(particleCount * 3);
+            
+            const colorPalette = [
+                new THREE.Color(0x00ffff),
+                new THREE.Color(0xff00ff),
+                new THREE.Color(0xffff00)
+            ];
+            
+            for (let i = 0; i < particleCount; i++) {
+                const i3 = i * 3;
+                
+                positions[i3] = (Math.random() - 0.5) * 200;
+                positions[i3 + 1] = (Math.random() - 0.5) * 200;
+                positions[i3 + 2] = (Math.random() - 0.5) * 100;
+                
+                const color = colorPalette[Math.floor(Math.random() * colorPalette.length)];
+                colors[i3] = color.r;
+                colors[i3 + 1] = color.g;
+                colors[i3 + 2] = color.b;
+            }
+            
+            geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+            
+            const material = new THREE.PointsMaterial({
+                size: 2,
+                vertexColors: true,
+                transparent: true,
+                opacity: 0.6,
+                blending: THREE.AdditiveBlending
+            });
+            
+            particleSystem = new THREE.Points(geometry, material);
+            scene.add(particleSystem);
+        }
+
+        // Animation Loop
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            const time = clock.getElapsedTime();
+            
+            if (particleSystem) {
+                particleSystem.rotation.x = time * 0.01;
+                particleSystem.rotation.y = time * 0.02;
+                
+                const positions = particleSystem.geometry.attributes.position.array;
+                for (let i = 0; i < positions.length; i += 3) {
+                    positions[i + 1] += Math.sin(time + positions[i] * 0.01) * 0.01;
+                    positions[i] += Math.cos(time + positions[i + 1] * 0.01) * 0.005;
+                }
+                particleSystem.geometry.attributes.position.needsUpdate = true;
+            }
+
+            // Smooth cursor lerp
+            currentCursorPos.x += (cursorTarget.x - currentCursorPos.x) * 0.25;
+            currentCursorPos.y += (cursorTarget.y - currentCursorPos.y) * 0.25;
+            const cursor = document.querySelector('.cursor');
+            cursor.style.transform = `translate(${currentCursorPos.x}px, ${currentCursorPos.y}px)`;
+            
+            renderer.render(scene, camera);
+        }
+
+        // Interactions
+        function initInteractions() {
+            initCustomCursor();
+            initNavigation();
+            initForm();
+            initButtons();
+            initTonearm();
+            
+            // Mouse movement
+            document.addEventListener('mousemove', (e) => {
+                mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+                mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+            });
+            
+            // Window resize
+            window.addEventListener('resize', onWindowResize);
+            
+            // Scroll effects
+            window.addEventListener('scroll', () => {
+                const nav = document.querySelector('nav');
+                if (window.scrollY > 100) {
+                    nav.classList.add('scrolled');
+                } else {
+                    nav.classList.remove('scrolled');
+                }
+            });
+        }
+
+        // Custom Cursor
+        function initCustomCursor() {
+            const cursor = document.querySelector('.cursor');
+            
+            document.addEventListener('mousemove', (e) => {
+                let offset = 10;
+                if (cursor.classList.contains('hover')) {
+                    offset = 25;
+                }
+                cursorTarget.x = e.clientX - offset;
+                cursorTarget.y = e.clientY - offset;
+                cursor.classList.add('active');
+            });
+            
+            // Hover effects
+            const hoverElements = document.querySelectorAll('a, button, .project-card, .skill-card, .tonearm');
+            hoverElements.forEach(element => {
+                element.addEventListener('mouseenter', () => cursor.classList.add('hover'));
+                element.addEventListener('mouseleave', () => cursor.classList.remove('hover'));
+            });
+        }
+
+        // Tonearm Drag
+        function initTonearm() {
+            const tonearm = document.querySelector('.tonearm');
+            const audio = document.getElementById('record-player');
+            const profile = document.querySelector('.profile-container');
+            
+            let dragging = false;
+            let startAngle = 45; // Default angle
+            let currentAngle = 45;
+            let isPlaying = false;
+            
+            // Get consistent pivot point
+            function getPivotPoint() {
+                const tonearmRect = tonearm.getBoundingClientRect();
+                return {
+                    x: tonearmRect.right,
+                    y: tonearmRect.top + tonearmRect.height / 2
+                };
+            }
+            
+            // Calculate angle from mouse position
+            function getAngleFromMouse(mouseX, mouseY) {
+                const pivot = getPivotPoint();
+                const deltaX = mouseX - pivot.x;
+                const deltaY = mouseY - pivot.y;
+                return Math.atan2(deltaY, deltaX) * (180 / Math.PI);
+            }
+            
+            // Check if needle is on record with improved accuracy
+            function isNeedleOnRecord() {
+                const profileRect = profile.getBoundingClientRect();
+                const profileCenter = {
+                    x: profileRect.left + profileRect.width / 2,
+                    y: profileRect.top + profileRect.height / 2
+                };
+                const profileRadius = profileRect.width / 2;
+                
+                // Calculate needle tip position based on tonearm angle
+                const tonearmLength = 220; // Approximate length to needle tip
+                const angleRad = (currentAngle * Math.PI) / 180;
+                const pivot = getPivotPoint();
+                
+                const needleTipX = pivot.x + Math.cos(angleRad) * tonearmLength;
+                const needleTipY = pivot.y + Math.sin(angleRad) * tonearmLength;
+                
+                // Check if needle tip is within record bounds
+                const distanceToCenter = Math.sqrt(
+                    Math.pow(needleTipX - profileCenter.x, 2) + 
+                    Math.pow(needleTipY - profileCenter.y, 2)
+                );
+                
+                // Allow some tolerance for the record surface
+                return distanceToCenter <= profileRadius - 20; // 20px margin
+            }
+            
+            // Update tonearm visual state
+            function updateTonearmState(playing) {
+                if (playing !== isPlaying) {
+                    isPlaying = playing;
+                    if (playing) {
+                        tonearm.classList.add('playing');
+                        profile.style.animationPlayState = 'running';
+                    } else {
+                        tonearm.classList.remove('playing');
+                        profile.style.animationPlayState = 'paused';
+                    }
+                }
+            }
+            
+            // Mouse down event
+            tonearm.addEventListener('mousedown', (e) => {
+                e.preventDefault();
+                dragging = true;
+                tonearm.style.transition = 'none';
+                startAngle = currentAngle;
+                
+                // Add visual feedback
+                tonearm.style.filter = 'drop-shadow(0 8px 16px rgba(0, 255, 255, 0.4))';
+                document.body.style.cursor = 'grabbing';
+            });
+            
+            // Mouse move event
+            document.addEventListener('mousemove', (e) => {
+                if (!dragging) return;
+                
+                const mouseAngle = getAngleFromMouse(e.clientX, e.clientY);
+                
+                // Constrain angle to realistic range
+                let newAngle = Math.max(-15, Math.min(65, mouseAngle));
+                currentAngle = newAngle;
+                
+                tonearm.style.transform = `rotate(${newAngle}deg)`;
+                
+                // Real-time feedback
+                if (isNeedleOnRecord()) {
+                    tonearm.style.filter = 'drop-shadow(0 8px 16px rgba(0, 255, 0, 0.4))';
+                } else {
+                    tonearm.style.filter = 'drop-shadow(0 8px 16px rgba(255, 0, 0, 0.4))';
+                }
+            });
+            
+            // Mouse up event
+            document.addEventListener('mouseup', () => {
+                if (!dragging) return;
+                
+                dragging = false;
+                document.body.style.cursor = '';
+                
+                // Restore transition
+                tonearm.style.transition = 'all 0.4s cubic-bezier(0.4, 0.0, 0.2, 1)';
+                tonearm.style.filter = 'drop-shadow(0 4px 8px rgba(0, 0, 0, 0.3))';
+                
+                // Check final position and snap accordingly
+                if (isNeedleOnRecord()) {
+                    // Snap to play position
+                    currentAngle = 8; // Optimal play angle
+                    tonearm.style.transform = `rotate(${currentAngle}deg)`;
+                    
+                    // Start playing with smooth fade-in
+                    audio.volume = 0;
+                    audio.play().then(() => {
+                        // Fade in audio
+                        const fadeIn = setInterval(() => {
+                            if (audio.volume < 0.7) {
+                                audio.volume = Math.min(audio.volume + 0.05, 0.7);
+                            } else {
+                                clearInterval(fadeIn);
+                            }
+                        }, 50);
+                    }).catch(() => {
+                        // Handle autoplay restrictions
+                        console.log('Audio autoplay blocked - user interaction required');
+                    });
+                    
+                    updateTonearmState(true);
+                    
+                    // Add subtle success animation
+                    setTimeout(() => {
+                        tonearm.style.transform = `rotate(${currentAngle}deg) scale(1.02)`;
+                        setTimeout(() => {
+                            tonearm.style.transform = `rotate(${currentAngle}deg) scale(1)`;
+                        }, 200);
+                    }, 100);
+                    
+                } else {
+                    // Snap back to rest position
+                    currentAngle = 45;
+                    tonearm.style.transform = `rotate(${currentAngle}deg)`;
+                    
+                    // Fade out and stop audio
+                    if (!audio.paused) {
+                        const fadeOut = setInterval(() => {
+                            if (audio.volume > 0.05) {
+                                audio.volume = Math.max(audio.volume - 0.05, 0);
+                            } else {
+                                audio.pause();
+                                audio.volume = 0.7; // Reset for next time
+                                clearInterval(fadeOut);
+                            }
+                        }, 30);
+                    }
+                    
+                    updateTonearmState(false);
+                }
+            });
+            
+            // Click to toggle (easier interaction)
+            tonearm.addEventListener('click', (e) => {
+                if (e.detail === 1) { // Single click only
+                    setTimeout(() => {
+                        if (isPlaying) {
+                            // Lift needle
+                            currentAngle = 45;
+                            tonearm.style.transform = `rotate(${currentAngle}deg)`;
+                            audio.pause();
+                            updateTonearmState(false);
+                        } else {
+                            // Drop needle
+                            currentAngle = 8;
+                            tonearm.style.transform = `rotate(${currentAngle}deg)`;
+                            audio.play().catch(() => {});
+                            updateTonearmState(true);
+                        }
+                    }, 100); // Small delay to distinguish from drag
+                }
+            });
+            
+            // Hover effects
+            tonearm.addEventListener('mouseenter', () => {
+                if (!dragging) {
+                    tonearm.style.transform = `rotate(${currentAngle}deg) scale(1.05)`;
+                }
+            });
+            
+            tonearm.addEventListener('mouseleave', () => {
+                if (!dragging) {
+                    tonearm.style.transform = `rotate(${currentAngle}deg) scale(1)`;
+                }
+            });
+        }
+
+        // Navigation
+        function initNavigation() {
+            const navLinks = document.querySelectorAll('.nav-links a');
+            
+            navLinks.forEach(link => {
+                link.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    const targetId = link.getAttribute('href');
+                    const targetSection = document.querySelector(targetId);
+                    
+                    if (targetSection) {
+                        targetSection.scrollIntoView({ behavior: 'smooth' });
+                    }
+                });
+            });
+            
+            // Active nav link
+            window.addEventListener('scroll', () => {
+                const sections = document.querySelectorAll('.section');
+                let current = '';
+                
+                sections.forEach(section => {
+                    const sectionTop = section.offsetTop;
+                    if (window.scrollY >= sectionTop - 200) {
+                        current = section.getAttribute('id');
+                    }
+                });
+                
+                navLinks.forEach(link => {
+                    link.classList.remove('active');
+                    if (link.getAttribute('href') === '#' + current) {
+                        link.classList.add('active');
+                    }
+                });
+            });
+        }
+
+        // Form Handler
+        function initForm() {
+            const form = document.getElementById('contact-form');
+            
+            form.addEventListener('submit', (e) => {
+                e.preventDefault();
+                
+                const submitBtn = form.querySelector('.submit-btn');
+                const originalText = submitBtn.textContent;
+                
+                submitBtn.textContent = 'Sending...';
+                submitBtn.disabled = true;
+                
+                setTimeout(() => {
+                    submitBtn.textContent = 'Message Sent!';
+                    submitBtn.style.background = 'linear-gradient(45deg, #00ff00, #00aa00)';
+                    
+                    setTimeout(() => {
+                        submitBtn.textContent = originalText;
+                        submitBtn.style.background = '';
+                        submitBtn.disabled = false;
+                        form.reset();
+                    }, 2000);
+                }, 1500);
+            });
+        }
+
+        // Button Handlers
+        function initButtons() {
+            // CV Download
+            document.getElementById('download-cv')?.addEventListener('click', () => {
+                const a = document.createElement('a');
+                a.href = './Anish_Resume_google.pdf';
+                a.download = 'Anish_Resume_google.pdf';
+                a.click();
+            });
+            
+            // View Work Button
+            document.getElementById('view-work')?.addEventListener('click', () => {
+                document.getElementById('projects').scrollIntoView({ behavior: 'smooth' });
+            });
+        }
+
+        // Window Resize
+        function onWindowResize() {
+            if (camera && renderer) {
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(window.innerWidth, window.innerHeight);
+            }
+        }
+    </script>
+</body>
+</html>
